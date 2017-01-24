@@ -30,6 +30,7 @@
 
 import os
 import ycm_core
+import subprocess
 
 flags = [
     # INSERT FLAGS HERE
@@ -52,6 +53,29 @@ if os.path.exists( compilation_database_folder ):
   database = ycm_core.CompilationDatabase( compilation_database_folder )
 else:
   database = None
+
+def GetDefaultPathFlags(language):
+    echo = subprocess.Popen(["echo"], stdout=subprocess.PIPE)
+    compiler = subprocess.Popen(["clang", "-v", "-E", "-x", language, "-"], stdin=echo.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    echo.stdout.close()
+    output = compiler.communicate()[1].split('\n')
+
+    begin = False
+    end = False
+    paths = []
+    for i in output:
+        if not begin:
+            if i.find("#include <...>") != -1:
+                begin = True
+        elif not end and len(i) > 0 and i[0] == ' ':
+            paths.append("-isystem")
+            paths.append(i.strip())
+        else:
+            end = True
+    return paths
+
+default_cxx_path_flags = GetDefaultPathFlags("c++")
+default_c_path_flags = GetDefaultPathFlags("c")
 
 SOURCE_EXTENSIONS = [ '.C', '.cpp', '.cxx', '.cc', '.c', '.m', '.mm' ]
 
@@ -112,20 +136,34 @@ def GetCompilationInfoForFile( filename ):
 
 
 def FlagsForFile( filename, **kwargs ):
+  compilation_info = False
   if database:
     # Bear in mind that compilation_info.compiler_flags_ does NOT return a
     # python list, but a "list-like" StringVec object
     compilation_info = GetCompilationInfoForFile( filename )
-    if not compilation_info:
-      return None
-
+  if compilation_info:
     final_flags = MakeRelativePathsInFlagsAbsolute(
       compilation_info.compiler_flags_,
       compilation_info.compiler_working_dir_ )
-
   else:
     relative_to = DirectoryOfThisScript()
     final_flags = MakeRelativePathsInFlagsAbsolute( flags, relative_to )
+  default_flags = [
+          '-Wall',
+          '-Wextra',
+          '-pedantic'
+  ]
+  data = kwargs['client_data']
+  try:
+      filetype = data['&filetype']
+  except TypeError:
+      filetype = 'c++'
+  if filetype == 'c':
+      final_flags.extend(['-x', 'c'])
+      final_flags.extend(default_c_path_flags)
+  elif filetype == 'cpp':
+      final_flags.extend(['-x', 'c++'])
+      final_flags.extend(default_cxx_path_flags)
 
   return {
     'flags': final_flags,
